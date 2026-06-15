@@ -103,7 +103,7 @@ Just run all the cells in order from top to bottom.
 parking_slot_prediction/
 ├── data/
 │   ├── parking_meters_current.csv
-│   └── treas_parking_payments_2020_datasd.csv   <- you'll add this
+│   └── treas_parking_payments_2020_datasd.csv 
 ├── parkingslot.ipynb
 ├── .gitignore
 └── README.md
