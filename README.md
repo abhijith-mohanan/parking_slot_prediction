@@ -104,7 +104,7 @@ parking_slot_prediction/
 ├── data/
 │   └── parking_meters_current.csv
 ├── reports/
-│   └── main_final.tex        
+│   └── report.tex        
 ├── parkingslot.ipynb
 ├── .gitignore
 └── README.md
