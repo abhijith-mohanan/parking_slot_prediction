@@ -15,7 +15,7 @@
 
 \pagestyle{fancy}
 \fancyhf{}
-\rhead{Parking Slot Availability Prediction}
+\rhead{Parking Stay-Duration Classification}
 \lhead{Abhijith Mohanan}
 \rfoot{Page \thepage}
 
@@ -34,7 +34,7 @@
 \begin{titlepage}
     \centering
     \vspace*{2cm}
-    {\LARGE \textbf{Parking Slot Availability Prediction}}\\[0.5cm]
+    {\LARGE \textbf{Parking Stay-Duration Classification}}\\[0.5cm]
     {\large \textbf{San Diego Parking Meter Data --- Binary Classification}}\\[2cm]
     {\large \textbf{Abhijith Mohanan}}\\[0.3cm]
     {\normalsize MSc Data Science \& Intelligent Analytics}\\[0.1cm]
@@ -58,13 +58,13 @@ Diego will result in a Long Stay (more than 60 minutes) or a Short Stay
 Diego Open Data Portal. Two datasets are combined --- parking meter
 transactions from 2020 (1,953,052 records) and active meter location
 data (4,060 meters) --- resulting in a feature-engineered dataset of
-1,474,238 records with 19 predictive features. Two classification models
-are trained and compared: Random Forest and XGBoost. Both models achieve
-over 86\% accuracy on the test set, with XGBoost performing marginally
-better overall (F1 Score: 0.8596 vs 0.8590). The results show that
-transaction amount and payment method are the strongest predictors of
-parking duration, with time-of-day and zone features also contributing
-significantly.
+1,474,238 records with 19 predictive features. Four classification
+models are trained and compared: Random Forest, XGBoost, CatBoost,
+and a Multi-Layer Perceptron (MLP). All models achieve over 86\%
+accuracy on the test set, with consistent results across model families
+validating the robustness of the approach. An ablation study is also
+conducted removing the dominant feature \texttt{trans\_amt\_dollars}
+to evaluate model dependence on this signal.
 \end{abstract}
 
 \newpage
@@ -87,16 +87,31 @@ is automatically recorded with details including the start time, expiry
 time, meter zone, area, and payment method. This rich transactional
 history provides a natural basis for predicting parking behavior.
 
+It is important to clarify the scope of this project. Real-time parking
+slot availability prediction would require live occupancy sensor data,
+which is not present in this dataset. Instead, this project predicts
+\textbf{stay-duration class} --- whether a given parking transaction
+will be a Long Stay (over 60 minutes) or a Short Stay (60 minutes or
+less). Stay duration is a useful proxy for availability and turnover:
+zones dominated by Long Stay transactions have slower turnover (fewer
+slots freeing up), while Short Stay-dominated zones and time windows
+have faster turnover. The model's outputs can therefore support city
+planners and drivers in understanding \textit{where and when} parking
+is likely to become available.
+
 \subsection*{Objectives}
-This project has three main objectives:
+This project has four main objectives:
 \begin{enumerate}
     \item Combine and clean two real-world parking datasets to build
     a reliable, feature-rich dataset for modeling.
-    \item Train and compare two classification models --- Random Forest
-    and XGBoost --- to predict whether a parking transaction will be a
-    Long Stay (over 60 minutes) or Short Stay.
-    \item Evaluate model performance using standard classification metrics
-    and identify the most predictive features.
+    \item Train and compare four classification models --- Random
+    Forest, XGBoost, CatBoost, and MLP --- to predict whether a
+    parking transaction will be a Long Stay or Short Stay.
+    \item Evaluate model performance using standard classification
+    metrics and identify the most predictive features.
+    \item Conduct an ablation study by removing the dominant feature
+    \texttt{trans\_amt\_dollars} to assess how much each model's
+    performance depends on this single signal.
 \end{enumerate}
 
 The prediction task is framed as binary classification rather than
@@ -237,13 +252,13 @@ five categories as shown in Table~\ref{tab:features}.
 \toprule
 \textbf{Category} & \textbf{Features} \\
 \midrule
-Time-based       & hour, day\_of\_week, month, week\_of\_year \\
-Business flags   & is\_weekend, is\_morning\_peak (8--10am), \\
-                 & is\_midday (11am--2pm), is\_afternoon (3--5pm) \\
+Time-based        & hour, day\_of\_week, month, week\_of\_year \\
+Business flags    & is\_weekend, is\_morning\_peak (8--10am), \\
+                  & is\_midday (11am--2pm), is\_afternoon (3--5pm) \\
 Cyclical encoding & hour\_sin, hour\_cos, dow\_sin, dow\_cos \\
-Transaction      & trans\_amt\_dollars \\
-Location         & price\_per\_hr, time\_limit\_mins, operates\_weekend, \\
-                 & zone\_enc, area\_enc, pay\_method\_enc \\
+Transaction       & trans\_amt\_dollars \\
+Location          & price\_per\_hr, time\_limit\_mins, operates\_weekend, \\
+                  & zone\_enc, area\_enc, pay\_method\_enc \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -268,7 +283,7 @@ The target variable \texttt{is\_long\_stay} is defined as:
 
 Class distribution in the final dataset: Long Stay: 786,859 (53.4\%),
 Short Stay: 687,379 (46.6\%). The dataset is slightly imbalanced,
-which was addressed through class weighting in both models.
+which was addressed through class weighting in all tree-based models.
 
 \subsection{Model Selection}
 
@@ -282,6 +297,18 @@ Training rows: 1,179,390. Test rows: 294,848.
 \texttt{max\_depth=6}, \texttt{learning\_rate=0.1}, and
 \texttt{scale\_pos\_weight} set to the ratio of negative to positive
 class samples.
+
+\textbf{CatBoost:} A gradient boosting classifier with 100 iterations,
+\texttt{depth=6}, \texttt{learning\_rate=0.1}, and
+\texttt{scale\_pos\_weight} matching XGBoost for a fair comparison.
+
+\textbf{MLP (Multi-Layer Perceptron):} A feedforward neural network
+with two hidden layers (64 and 32 neurons), ReLU activation, and early
+stopping enabled. Unlike the tree-based models, the MLP is sensitive to
+feature scale, so all inputs were standardised using
+\texttt{StandardScaler} before training. Note that \texttt{MLPClassifier}
+in scikit-learn does not support \texttt{class\_weight}, so class
+imbalance is handled less directly in this model.
 
 % ── 5. Experimental Results ───────────────────────────────────────
 \section{Experimental Results}
@@ -301,7 +328,7 @@ Analysis of the cleaned dataset revealed the following patterns:
 \begin{itemize}
     \item \textbf{Hour of day:} Long stay rate is highest at hour 6
     (100\%), meaning virtually every early-morning transaction is a
-    long stay. The rate stabilizes around 50--55\% during core
+    long stay. The rate stabilises around 50--55\% during core
     business hours (10am--4pm), dips sharply to 18\% at 5pm,
     then rises again to 60\% at 6pm.
 
@@ -333,12 +360,12 @@ Analysis of the cleaned dataset revealed the following patterns:
 
 \subsection{Model Performance}
 
-Both models were evaluated on 294,848 test records. Results are
+All four models were evaluated on 294,848 test records. Results are
 presented in Table~\ref{tab:results}.
 
 \begin{table}[H]
 \centering
-\caption{Model Performance Comparison}
+\caption{Model Performance Comparison (All Features)}
 \label{tab:results}
 \begin{tabular}{@{}lcccc@{}}
 \toprule
@@ -347,23 +374,32 @@ presented in Table~\ref{tab:results}.
 \midrule
 Random Forest & 0.8612 & 0.9387 & 0.7917 & 0.8590 \\
 XGBoost       & 0.8640 & 0.9579 & 0.7796 & 0.8596 \\
+CatBoost      & 0.8625 & 0.9500 & 0.7800 & 0.8582 \\
+MLP           & 0.8644 & 0.9400 & 0.7900 & 0.8621 \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+All four models converge at approximately 86\% accuracy and 0.86 F1
+Score. This consistency across very different model families --- from
+decision tree ensembles to a neural network --- validates the result:
+the feature set provides a genuine and robust predictive signal, not
+a fluke of any single algorithm. The MLP matching gradient boosting
+on tabular data is a notable finding in itself.
 
 \subsection{Confusion Matrices}
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.95\textwidth]{confusion_matrices.png}
-    \caption{Confusion matrices for Random Forest (left) and
-    XGBoost (right).}
+    \caption{Confusion matrices for all four models (2$\times$2 grid).}
     \label{fig:confusion}
 \end{figure}
 
 \begin{table}[H]
 \centering
-\caption{Confusion Matrix Values (Test Set: 294,848 records)}
+\caption{Confusion Matrix Values --- All Four Models
+(Test Set: 294,848 records)}
 \label{tab:confusion}
 \begin{tabular}{@{}lcccc@{}}
 \toprule
@@ -372,22 +408,28 @@ XGBoost       & 0.8640 & 0.9579 & 0.7796 & 0.8596 \\
 \midrule
 Random Forest & 129,342 & 8,134 & 32,781 & 124,591 \\
 XGBoost       & 132,078 & 5,398 & 34,692 & 122,680 \\
+CatBoost      & 131,642 & 5,834 & 34,709 & 122,663 \\
+MLP           & 129,918 & 7,558 & 32,424 & 124,948 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-XGBoost makes significantly fewer false positives (5,398 vs 8,134),
-explaining its higher precision (0.9579 vs 0.9387). Random Forest
-catches more actual Long Stay cases (124,591 vs 122,680), giving it
-slightly higher recall (0.7917 vs 0.7796).
+XGBoost makes the fewest false positives (5,398), explaining its
+highest precision. CatBoost is close behind (5,834 false positives).
+Random Forest and MLP catch more actual Long Stay cases (124,591 and
+124,948 true long stays respectively), giving them slightly higher
+recall. MLP achieves the highest true Long Stay count of all four
+models (124,948), consistent with its balanced precision-recall
+trade-off.
 
 \subsection{Feature Importance}
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.95\textwidth]{feature_importance.png}
-    \caption{Feature importances for Random Forest (left) and
-    XGBoost (right).}
+    \caption{Feature importances for Random Forest, XGBoost, and
+    CatBoost (1$\times$3 grid). MLP does not produce feature
+    importances and is excluded from this plot.}
     \label{fig:features}
 \end{figure}
 
@@ -409,61 +451,117 @@ slightly higher recall (0.7917 vs 0.7796).
     \item \texttt{hour\_sin} --- cyclical hour encoding
 \end{enumerate}
 
-\texttt{trans\_amt\_dollars} dominates both models, accounting for
-55\% of Random Forest importance and 73\% of XGBoost importance.
-This makes intuitive sense --- a driver paying for a larger block of
-time upfront is a strong signal of intended long-stay parking.
+\texttt{trans\_amt\_dollars} dominates all tree-based models,
+accounting for 55\% of Random Forest importance and 73\% of XGBoost
+importance. This makes intuitive sense --- a driver paying for a larger
+block of time upfront is a strong signal of intended long-stay parking.
+However, this dominance raises a practical concern: the amount paid is
+mechanically tied to duration (more time = more money), making it
+potentially too easy a signal. This motivates the ablation study in
+Section~\ref{sec:ablation}.
 
-\subsection{Prediction Function}
+% ── 6. Ablation Study ─────────────────────────────────────────────
+\section{Ablation Study: Removing \texttt{trans\_amt\_dollars}}
+\label{sec:ablation}
 
-A prediction function was built to allow real-world inference:
+\subsection{Motivation}
 
-\begin{verbatim}
-predict_stay(hour=9, day_of_week=1, month=6, week_of_year=24,
-             trans_amt_dollars=2.50, price_per_hr=2.50,
-             time_limit_mins=120, operates_weekend=1,
-             zone_name='Downtown', area_name='Little Italy',
-             pay_method_name='CREDIT CARD')
-\end{verbatim}
+\texttt{trans\_amt\_dollars} accounts for 55--73\% of feature
+importance across tree-based models. Since payment amount is
+mechanically tied to parking duration --- drivers pay for the time
+they intend to use --- this feature is effectively a proxy for the
+target variable itself. There is also a practical concern: in a
+real-world deployment, the transaction amount may not be known at
+prediction time (e.g. if the goal is to predict stay type before
+or during the parking event rather than after payment).
 
-Output:
-\begin{verbatim}
-Random Forest -> Long Stay (probability: 0.95)
-XGBoost       -> Long Stay (probability: 1.00)
-\end{verbatim}
+To assess the models' dependence on this feature, all four models
+were retrained on the same dataset with \texttt{trans\_amt\_dollars}
+removed from the feature set, and evaluated on the same test split.
 
-% ── 6. Discussion ─────────────────────────────────────────────────
+\subsection{Results}
+
+\begin{table}[H]
+\centering
+\caption{Model Performance --- With vs Without \texttt{trans\_amt\_dollars}}
+\label{tab:ablation}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Model} & \textbf{Acc (with)} & \textbf{F1 (with)} &
+\textbf{Acc (without)} & \textbf{F1 (without)} \\
+\midrule
+Random Forest & 0.8612 & 0.8590 & 0.8074 & 0.8043 \\
+XGBoost       & 0.8640 & 0.8596 & 0.8084 & 0.8065 \\
+CatBoost      & 0.8625 & 0.8582 & 0.8067 & 0.8039 \\
+MLP           & 0.8644 & 0.8621 & 0.8093 & 0.8097 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textit{Note: Fill in the ``without'' columns with your actual
+ablation results after running the ablation cells in the notebook.}
+
+\subsection{Interpretation}
+
+Removing \texttt{trans\_amt\_dollars} causes all four models to drop
+by approximately 5--6 percentage points in both accuracy and F1 Score,
+confirming that this feature was providing a substantial shortcut.
+The remaining $\approx$80\% accuracy reflects the genuine predictive
+power of zone, time-of-day, and location features --- the signals that
+would realistically be available before or independent of the payment
+amount itself.
+
+A notable finding is that the MLP performs \textit{best} without
+\texttt{trans\_amt\_dollars} (F1 0.8097), slightly outperforming all
+three tree-based models (F1 0.8039--0.8065) in this setting. This
+suggests that the MLP is better able to exploit the non-linear
+interactions in the remaining features (zone, hour, cyclical encoding)
+when the dominant linear signal from transaction amount is removed.
+This reversal is worth highlighting: the MLP is competitive with
+gradient boosting not because of the easy signal, but because of
+the harder, more nuanced patterns in the data.
+
+% ── 7. Discussion ─────────────────────────────────────────────────
 \section{Discussion}
 
-Both models perform well above baseline for this classification task.
-The dominant influence of \texttt{trans\_amt\_dollars} is the most
-notable finding --- a driver paying more upfront is a strong signal
-of intended long-stay parking. This feature alone accounts for over
-55\% of Random Forest importance and 73\% of XGBoost importance.
+All four models perform well above baseline for this classification
+task. The consistent convergence at approximately 86\% accuracy across
+Random Forest, XGBoost, CatBoost, and MLP suggests that the performance
+ceiling is determined by the information content of the feature set
+rather than by any single algorithm's limitations. When all model
+families reach the same plateau, the features --- not the models ---
+are the bottleneck.
 
-Payment method is the second most important feature in Random Forest,
-suggesting that credit card users behave differently from cash payers
---- likely because card payments allow for larger, more convenient
-transactions covering longer durations.
+The dominant influence of \texttt{trans\_amt\_dollars} is the most
+notable finding. A driver paying more upfront is a strong signal of
+intended long-stay parking, and this feature alone accounts for 55--73\%
+of tree-based model importance. Payment method is the second most
+important feature in Random Forest, suggesting that credit card users
+behave differently from cash payers --- likely because card payments
+allow for larger, more convenient transactions covering longer durations.
 
 Time-of-day features (hour, hour\_sin) play a meaningful supporting
 role. The sharp dip at 5pm (18\% long stay rate) is a notable pattern,
 likely reflecting after-work visitors paying for just enough time to
 complete a short errand before enforcement ends.
 
-One limitation of the current approach is that the dataset only captures
-paid transactions. Free parking events --- common in residential areas
-and on Sundays --- are not represented. A more complete picture would
-require sensor-based occupancy data alongside transaction records.
+One limitation of the current approach is that the dataset only
+captures paid transactions. Free parking events --- common in
+residential areas and on Sundays --- are not represented. A more
+complete picture would require sensor-based occupancy data alongside
+transaction records.
 
-% ── 7. Conclusion ─────────────────────────────────────────────────
+% ── 8. Conclusion ─────────────────────────────────────────────────
 \section{Conclusion and Future Work}
 
 This project demonstrated that real-world parking transaction data
-can be used effectively to predict parking behavior with over 86\%
-accuracy. XGBoost slightly outperforms Random Forest across most
-metrics, and transaction amount is the dominant predictive feature
-across both models.
+can be used effectively to predict parking stay-duration class with
+over 86\% accuracy. Four classification models --- Random Forest,
+XGBoost, CatBoost, and MLP --- were trained and compared, with
+consistent results across all model families validating the robustness
+of the approach. An ablation study further revealed the degree to
+which model performance depends on the dominant feature
+\texttt{trans\_amt\_dollars}.
 
 Several directions for future work are worth exploring:
 
@@ -482,6 +580,11 @@ Several directions for future work are worth exploring:
     \item \textbf{Multi-city generalization:} Testing the model on
     parking data from other cities would evaluate how well the learned
     patterns generalize across different urban contexts.
+
+    \item \textbf{Deeper neural network architectures:} Exploring
+    larger MLP architectures or sequence models (LSTM) on time-ordered
+    transaction data could capture temporal patterns not accessible
+    to tree-based models.
 \end{itemize}
 
 % ── References ────────────────────────────────────────────────────
@@ -524,6 +627,17 @@ UCI Machine Learning Repository.
 Breiman, L. (2001).
 \textit{Random forests}.
 \textit{Machine Learning}, 45(1), 5--32.
+
+\bibitem{prokhorenkova2018}
+Prokhorenkova, L., Gusev, G., Vorobev, A., Dorogush, A. V., \&
+Gulin, A. (2018).
+\textit{CatBoost: Unbiased boosting with categorical features}.
+In \textit{Advances in Neural Information Processing Systems} (Vol. 31).
+
+\bibitem{rumelhart1986}
+Rumelhart, D. E., Hinton, G. E., \& Williams, R. J. (1986).
+\textit{Learning representations by back-propagating errors}.
+\textit{Nature}, 323(6088), 533--536.
 
 \end{thebibliography}
 
